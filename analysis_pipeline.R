@@ -6,6 +6,9 @@
 #   2) Binary classification (GroupA vs GroupB) with radiomics, clinical,
 #      and combined feature sets
 #   3) Sensitivity analyses (LHO subgroup; postnatal-echo-confirmed subgroup)
+#
+# Performance metrics are reported as mean with 95% CI, where
+#   CI = mean +/- qt(0.975, N_REPEATS-1) * SD / sqrt(N_REPEATS)
 # ============================================================
 
 # ---- 0. Packages ----
@@ -22,7 +25,7 @@ set.seed(42)
 # ============================================================
 # ---- 1. Paths and parameters ----
 # ============================================================
-data_path     <- "./data/新Total.xlsx"
+data_path     <- "./data/radiomics_dataset.xlsx"
 icc_path      <- "./data/ICC_select.csv"
 out_dir       <- "./output"
 if (!dir.exists(out_dir)) dir.create(out_dir, recursive=TRUE)
@@ -31,6 +34,10 @@ clinical_vars <- c("LV_GLS","MV.annulus","RV.LV","GA")
 N_REPEATS     <- 10
 N_FOLDS       <- 5
 LHO_types     <- c("aortic coarctation","aortic arch hypoplasia","aortic stenosis")
+
+# 95% CI calculation constants (based on t-distribution with N_REPEATS d.f.)
+CI_T_VALUE <- qt(0.975, N_REPEATS - 1)   # 2.262 for N_REPEATS = 10
+CI_SQRT_N  <- sqrt(N_REPEATS)
 
 # Group coding: 0 = Control, 1 = GroupA, 2 = GroupB
 # Instrument coding: 0 = E10, 1 = E8
@@ -238,18 +245,26 @@ feat_count_to_df <- function(feat_count, total_folds, extra_cols=list()) {
   df
 }
 
+# 95% CI lower / upper bound
+ci_low  <- function(x) round(mean(x, na.rm=TRUE) - CI_T_VALUE * sd(x, na.rm=TRUE) / CI_SQRT_N, 3)
+ci_high <- function(x) round(mean(x, na.rm=TRUE) + CI_T_VALUE * sd(x, na.rm=TRUE) / CI_SQRT_N, 3)
+
 summarise_cv <- function(metrics_df) {
   metrics_df %>%
     group_by(model) %>%
-    summarise(AUC_mean  = round(mean(auc,  na.rm=TRUE), 3),
-              AUC_sd    = round(sd(auc,    na.rm=TRUE), 3),
-              Sens_mean = round(mean(sens, na.rm=TRUE), 3),
-              Sens_sd   = round(sd(sens,   na.rm=TRUE), 3),
-              Spec_mean = round(mean(spec, na.rm=TRUE), 3),
-              Spec_sd   = round(sd(spec,   na.rm=TRUE), 3),
-              Acc_mean  = round(mean(acc,  na.rm=TRUE), 3),
-              Acc_sd    = round(sd(acc,    na.rm=TRUE), 3),
-              n_folds   = n(), .groups="drop")
+    summarise(AUC_mean    = round(mean(auc,  na.rm=TRUE), 3),
+              AUC_CI_low  = ci_low(auc),
+              AUC_CI_high = ci_high(auc),
+              Sens_mean   = round(mean(sens, na.rm=TRUE), 3),
+              Sens_CI_low = ci_low(sens),
+              Sens_CI_high= ci_high(sens),
+              Spec_mean   = round(mean(spec, na.rm=TRUE), 3),
+              Spec_CI_low = ci_low(spec),
+              Spec_CI_high= ci_high(spec),
+              Acc_mean    = round(mean(acc,  na.rm=TRUE), 3),
+              Acc_CI_low  = ci_low(acc),
+              Acc_CI_high = ci_high(acc),
+              n_folds     = n(), .groups="drop")
 }
 
 select_best_model <- function(metrics_df) {
@@ -414,15 +429,19 @@ bin_metrics <- bind_rows(
   res_comb$metrics  %>% mutate(feature_set="Combined"))
 bin_summary <- bin_metrics %>%
   group_by(feature_set, model) %>%
-  summarise(AUC_mean  = round(mean(auc,  na.rm=TRUE), 3),
-            AUC_sd    = round(sd(auc,    na.rm=TRUE), 3),
-            Sens_mean = round(mean(sens, na.rm=TRUE), 3),
-            Sens_sd   = round(sd(sens,   na.rm=TRUE), 3),
-            Spec_mean = round(mean(spec, na.rm=TRUE), 3),
-            Spec_sd   = round(sd(spec,   na.rm=TRUE), 3),
-            Acc_mean  = round(mean(acc,  na.rm=TRUE), 3),
-            Acc_sd    = round(sd(acc,    na.rm=TRUE), 3),
-            n_folds   = n(), .groups="drop")
+  summarise(AUC_mean    = round(mean(auc,  na.rm=TRUE), 3),
+            AUC_CI_low  = ci_low(auc),
+            AUC_CI_high = ci_high(auc),
+            Sens_mean   = round(mean(sens, na.rm=TRUE), 3),
+            Sens_CI_low = ci_low(sens),
+            Sens_CI_high= ci_high(sens),
+            Spec_mean   = round(mean(spec, na.rm=TRUE), 3),
+            Spec_CI_low = ci_low(spec),
+            Spec_CI_high= ci_high(spec),
+            Acc_mean    = round(mean(acc,  na.rm=TRUE), 3),
+            Acc_CI_low  = ci_low(acc),
+            Acc_CI_high = ci_high(acc),
+            n_folds     = n(), .groups="drop")
 
 best_radio <- select_best_model(res_radio$metrics)
 best_clin  <- select_best_model(res_clin$metrics)
@@ -561,15 +580,19 @@ sa_bin_metrics <- bind_rows(
   res_sa_comb$metrics %>% mutate(feature_set="Combined"))
 sa_bin_summary <- sa_bin_metrics %>%
   group_by(feature_set, model) %>%
-  summarise(AUC_mean  = round(mean(auc,  na.rm=TRUE), 3),
-            AUC_sd    = round(sd(auc,    na.rm=TRUE), 3),
-            Sens_mean = round(mean(sens, na.rm=TRUE), 3),
-            Sens_sd   = round(sd(sens,   na.rm=TRUE), 3),
-            Spec_mean = round(mean(spec, na.rm=TRUE), 3),
-            Spec_sd   = round(sd(spec,   na.rm=TRUE), 3),
-            Acc_mean  = round(mean(acc,  na.rm=TRUE), 3),
-            Acc_sd    = round(sd(acc,    na.rm=TRUE), 3),
-            n_folds   = n(), .groups="drop")
+  summarise(AUC_mean    = round(mean(auc,  na.rm=TRUE), 3),
+            AUC_CI_low  = ci_low(auc),
+            AUC_CI_high = ci_high(auc),
+            Sens_mean   = round(mean(sens, na.rm=TRUE), 3),
+            Sens_CI_low = ci_low(sens),
+            Sens_CI_high= ci_high(sens),
+            Spec_mean   = round(mean(spec, na.rm=TRUE), 3),
+            Spec_CI_low = ci_low(spec),
+            Spec_CI_high= ci_high(spec),
+            Acc_mean    = round(mean(acc,  na.rm=TRUE), 3),
+            Acc_CI_low  = ci_low(acc),
+            Acc_CI_high = ci_high(acc),
+            n_folds     = n(), .groups="drop")
 
 sa_best_radio <- select_best_model(res_sa_r$metrics)
 sa_best_clin  <- select_best_model(res_sa_c$metrics)
@@ -625,10 +648,12 @@ cat("\n========== Primary vs SA comparison (best single models) ==========\n")
 compare_ova <- left_join(
   ova_summary %>% filter(model %in% unlist(ova_best_models)) %>%
     group_by(OVA_class) %>% slice_max(AUC_mean, n=1) %>%
-    select(OVA_class, Best_model=model, Main_AUC=AUC_mean, Main_SD=AUC_sd),
+    select(OVA_class, Best_model=model, Main_AUC=AUC_mean,
+           Main_CI_low=AUC_CI_low, Main_CI_high=AUC_CI_high),
   sa_ova_summary %>% filter(model %in% unlist(sa_ova_best)) %>%
     group_by(OVA_class) %>% slice_max(AUC_mean, n=1) %>%
-    select(OVA_class, SA_Best_model=model, SA_AUC=AUC_mean, SA_SD=AUC_sd),
+    select(OVA_class, SA_Best_model=model, SA_AUC=AUC_mean,
+           SA_CI_low=AUC_CI_low, SA_CI_high=AUC_CI_high),
   by="OVA_class") %>% mutate(Delta=round(SA_AUC-Main_AUC, 3))
 cat("\n--- Three-class OVA comparison ---\n"); print(compare_ova, row.names=FALSE)
 
@@ -637,7 +662,8 @@ make_bin_best_row <- function(summary_df, best_model, prefix="") {
     select(feature_set,
            !!paste0(prefix,"Best_model"):=model,
            !!paste0(prefix,"AUC"):=AUC_mean,
-           !!paste0(prefix,"SD"):=AUC_sd)
+           !!paste0(prefix,"CI_low"):=AUC_CI_low,
+           !!paste0(prefix,"CI_high"):=AUC_CI_high)
 }
 compare_bin <- left_join(
   bind_rows(make_bin_best_row(bin_summary%>%filter(feature_set=="Radiomics"),best_radio,"Main_"),
@@ -753,15 +779,19 @@ echo_bin_metrics <- bind_rows(
 
 echo_bin_summary <- echo_bin_metrics %>%
   group_by(feature_set, model) %>%
-  summarise(AUC_mean  = round(mean(auc,  na.rm=TRUE), 3),
-            AUC_sd    = round(sd(auc,    na.rm=TRUE), 3),
-            Sens_mean = round(mean(sens, na.rm=TRUE), 3),
-            Sens_sd   = round(sd(sens,   na.rm=TRUE), 3),
-            Spec_mean = round(mean(spec, na.rm=TRUE), 3),
-            Spec_sd   = round(sd(spec,   na.rm=TRUE), 3),
-            Acc_mean  = round(mean(acc,  na.rm=TRUE), 3),
-            Acc_sd    = round(sd(acc,    na.rm=TRUE), 3),
-            n_folds   = n(), .groups="drop")
+  summarise(AUC_mean    = round(mean(auc,  na.rm=TRUE), 3),
+            AUC_CI_low  = ci_low(auc),
+            AUC_CI_high = ci_high(auc),
+            Sens_mean   = round(mean(sens, na.rm=TRUE), 3),
+            Sens_CI_low = ci_low(sens),
+            Sens_CI_high= ci_high(sens),
+            Spec_mean   = round(mean(spec, na.rm=TRUE), 3),
+            Spec_CI_low = ci_low(spec),
+            Spec_CI_high= ci_high(spec),
+            Acc_mean    = round(mean(acc,  na.rm=TRUE), 3),
+            Acc_CI_low  = ci_low(acc),
+            Acc_CI_high = ci_high(acc),
+            n_folds     = n(), .groups="drop")
 
 echo_best_radio <- select_best_model(res_echo_r$metrics)
 echo_best_clin  <- select_best_model(res_echo_c$metrics)
